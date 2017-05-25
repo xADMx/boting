@@ -76,7 +76,7 @@ public class HttpCilent {
         }
         return true; 
   }
-  boolean GetPairCurrencies() {
+  boolean GetPairCurrencies(TypePairCurrencies TypePair) {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode actualObj = null;
         URIBuilder b;
@@ -93,8 +93,14 @@ public class HttpCilent {
         Iterator<?> keys = actualObj.getFieldNames();
         while(keys.hasNext() ) {
             String key = (String)keys.next();
-            try {
-                paircurrencies.put(key, mapper.readValue(actualObj.get(key).toString(), PairCurrencies.class));                
+            try {                
+                if (TypePair == TypePairCurrencies.NoALL){
+                    PairCurrencies Temp = mapper.readValue(actualObj.get(key).toString(), PairCurrencies.class);
+                    if (!Temp.isDelisted() || !Temp.isDisabled() || !Temp.isFrozen())
+                        paircurrencies.put(key, Temp);                
+                } else {
+                        paircurrencies.put(key, mapper.readValue(actualObj.get(key).toString(), PairCurrencies.class)); 
+                }
             } catch (IOException ex) {
                 Logger.getLogger(HttpCilent.class.getName()).log(Level.SEVERE, null, ex);
                 return false;
@@ -135,7 +141,7 @@ public class HttpCilent {
 
   }
   
-  Map<String, double[]> GetChartData(String currencyPair, String start, String end, String period) {
+  public Map<String, double[]> GetChartData(String currencyPair, String start, String end, String period) {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode arraychartdata = null;
         URIBuilder b;

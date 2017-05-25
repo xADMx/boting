@@ -5,7 +5,15 @@
  */
 package jbot;
 import ChartDirector.*;
+import java.awt.event.MouseEvent;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.Map;
+import javax.swing.JDialog;
+import javax.swing.JFrame;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -24,6 +32,7 @@ import java.util.Date;
 /// </summary>
 public class FinanceChart extends MultiChart
 {
+    HttpCilent client = new HttpCilent();
     int m_totalWidth = 0;
     int m_totalHeight = 0;
     boolean m_antiAlias = true;
@@ -97,7 +106,252 @@ public class FinanceChart extends MultiChart
         m_totalWidth = width;
         setMainChart(this);
     }
+    
+    public void disp(){
+        JDialog d = new JDialog((java.awt.Frame)null, toString(), true);
+        d.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+        d.setResizable(false);     
+        ChartViewer v =new ChartViewer();
+        v.setChart(this);
+        
+        // Create the ChartViewer and add it to the JDialog
+        d.getContentPane().add(v);
 
+        // Add a movedMovedPlotArea event listener to draw the track cursor
+        v.addTrackCursorListener(new TrackCursorAdapter() {
+            public void mouseMovedPlotArea(MouseEvent e) {
+                chartViewer1_MouseMovedPlotArea(e);
+            }
+        });
+        
+        // Layout and display the JDialog
+        d.pack();
+        d.setVisible(true);
+    }
+    
+      public void disp2(String title){        
+        JFrame frame = new JFrame(title);
+        JPanel panel = new JPanel();
+
+        // add something to you panel...
+                ChartViewer v =new ChartViewer();
+        v.setChart(this);
+        v.addTrackCursorListener(new TrackCursorAdapter() {
+            public void mouseMovedPlotArea(MouseEvent e) {
+                chartViewer1_MouseMovedPlotArea(e);
+            }
+        });
+        panel.add(v);
+        // add the panel to a JScrollPane
+        JScrollPane jScrollPane = new JScrollPane(panel);
+        // only a configuration to the jScrollPane...
+        jScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        jScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+
+        // Then, add the jScrollPane to your frame
+        frame.getContentPane().add(jScrollPane);
+                // Display the window
+        frame.pack();
+        frame.setVisible(true);
+     }
+    ChartViewer getChartViewer(int day, String pair, PeriodB period )
+    {
+        ChartViewer viewer = new ChartViewer();
+       
+        int start = 86400 * day;
+        Map<String, double[]> temp = client.GetChartData(pair, Long.toString(System.currentTimeMillis()/1000 - start), "9999999999", getPeriod(period));
+        // Create a FinanceChart object of width 640 pixels
+        FinanceChart c = new FinanceChart(1200);
+        c.setLegendStyle("normal", 8, Chart.Transparent, Chart.Transparent);
+     
+        // Add a title to the chart
+        c.addTitle("График для пары " + pair);
+        // Set the data into the finance chart object
+        c.setData(temp.get("timeStamps"), 
+                temp.get("highData"), 
+                temp.get("lowData"), 
+                temp.get("openData"), 
+                temp.get("closeData"), 
+                temp.get("volData"), day);
+        
+        // Add a slow stochastic chart (75 pixels high) with %K = 14 and %D = 3
+        c.addSlowStochastic(75, 14, 3, 0x006060, 0x606000);
+        // Add the main chart with 240 pixels in height
+        c.addMainChart(600);
+        c.addRSI(75, 14, 0x800080, 35, 0xff0000, 0x0000ff);
+        c.addVolIndicator(75, 0x99ff99, 0xff9999, 0x808080);
+        // Add a 10 period simple moving average to the main chart, using brown color
+        c.addSimpleMovingAvg(10, 0x663300);
+        // Add a 20 period simple moving average to the main chart, using purple color
+        c.addSimpleMovingAvg(20, 0x9900ff);
+        // Add candlestick symbols to the main chart, using green/red for up/down days
+        c.addCandleStick(0x00ff00, 0xff0000);
+        // Add 20 days donchian channel to the main chart, using light blue (9999ff) as the border
+        // and semi-transparent blue (c06666ff) as the fill color
+        c.addDonchianChannel(20, 0x9999ff, 0xc06666ff);
+        // Add a 75 pixels volume bars sub-chart to the bottom of the main chart, using
+        // green/red/grey for up/down/flat days
+        c.addVolBars(75, 0x99ff99, 0xff9999, 0x808080);
+        // Append a MACD(26, 12) indicator chart (75 pixels high) after the main chart, using 9 days
+        // for computing divergence.
+        c.addMACD(120, 26, 12, 9, 0x0000ff, 0xff00ff, 0x008000);
+          
+        c.disp2(pair);
+        // Output the chart
+        viewer.setChart(c);
+        
+        return viewer;
+    }
+    
+            //
+    // Draw track cursor when mouse is moving over plotarea
+    //
+    private void chartViewer1_MouseMovedPlotArea(MouseEvent e)
+    {
+        ChartViewer viewer = (ChartViewer)e.getSource();
+        trackFinance((MultiChart)viewer.getChart(), viewer.getPlotAreaMouseX());
+        viewer.updateDisplay();
+    }
+        
+        //
+    // Draw finance chart track line with legend
+    //
+    private void trackFinance(MultiChart m, int mouseX)
+    {
+        // Clear the current dynamic layer and get the DrawArea object to draw on it.
+        DrawArea d = m.initDynamicLayer();
+
+        // It is possible for a FinanceChart to be empty, so we need to check for it.
+        if (m.getChartCount() == 0) {
+            return ;
+        }
+
+        // Get the data x-value that is nearest to the mouse
+        int xValue = (int)(((XYChart)m.getChart(0)).getNearestXValue(mouseX));
+
+        // Iterate the XY charts (main price chart and indicator charts) in the FinanceChart
+        XYChart c = null;
+        for (int i = 0; i < m.getChartCount(); ++i) {
+            c = (XYChart)m.getChart(i);
+
+            // Variables to hold the legend entries
+            String ohlcLegend = "";
+            ArrayList legendEntries = new ArrayList();
+
+            // Iterate through all layers to find the highest data point
+            for (int j = 0; j < c.getLayerCount(); ++j) {
+                Layer layer = c.getLayerByZ(j);
+                int xIndex = layer.getXIndexOf(xValue);
+                int dataSetCount = layer.getDataSetCount();
+
+                // In a FinanceChart, only layers showing OHLC data can have 4 data sets
+                if (dataSetCount == 4) {
+                    double highValue = layer.getDataSet(0).getValue(xIndex);
+                    double lowValue = layer.getDataSet(1).getValue(xIndex);
+                    double openValue = layer.getDataSet(2).getValue(xIndex);
+                    double closeValue = layer.getDataSet(3).getValue(xIndex);
+
+                    if (closeValue != Chart.NoValue) {
+                        // Build the OHLC legend
+                        ohlcLegend = "Open: " + c.formatValue(openValue, "{value|P7}") + ", High: " +
+                            c.formatValue(highValue, "{value|P7}") + ", Low: " + c.formatValue(lowValue,
+                            "{value|P7}") + ", Close: " + c.formatValue(closeValue, "{value|P7}");
+
+                        // We also draw an upward or downward triangle for up and down days and the % change
+                        double lastCloseValue = layer.getDataSet(3).getValue(xIndex - 1);
+                        if (lastCloseValue != Chart.NoValue) {
+                            double change = closeValue - lastCloseValue;
+                            double percent = change * 100 / closeValue;
+                            String symbol = ((change >= 0) ?
+                                "<*font,color=008800*><*img=@triangle,width=8,color=008800*>" :
+                                "<*font,color=CC0000*><*img=@invertedtriangle,width=8,color=CC0000*>");
+
+                            ohlcLegend = ohlcLegend + "  " + symbol + " " + c.formatValue(change, "{value|P7}"
+                                ) + " (" + c.formatValue(percent, "{value|2}") + "%)<*/font*>";
+                        }
+
+                        // Use a <*block*> to make sure the line does not wrap within the legend entry
+                        ohlcLegend = "<*block*>" + ohlcLegend + "      <*/*>";
+                    }
+                } else {
+                    // Iterate through all the data sets in the layer
+                    for (int k = 0; k < layer.getDataSetCount(); ++k) {
+                        ChartDirector.DataSet dataSet = layer.getDataSetByZ(k);
+
+                        String name = dataSet.getDataName();
+                        double value = dataSet.getValue(xIndex);
+                        if ((!(name == null || name == "")) && (value != Chart.NoValue)) {
+
+                            // In a FinanceChart, the data set name consists of the indicator name and its
+                            // latest value. It is like "Vol: 123M" or "RSI (14): 55.34". As we are generating
+                            // the values dynamically, we need to extract the indictor name out, and also the
+                            // volume unit (if any).
+
+                            // The unit character, if any, is the last character and must not be a digit.
+                            String unitChar = name.substring(name.length() - 1);
+                            if (unitChar.compareTo("0") >= 0 && unitChar.compareTo("9") <= 0) {
+                                unitChar = "";
+                            }
+
+                            // The indicator name is the part of the name up to the colon character.
+                            int delimiterPosition = name.indexOf(":");
+                            if (delimiterPosition != -1) {
+                                name = name.substring(0, delimiterPosition);
+                            }
+
+                            // In a FinanceChart, if there are two data sets, it must be representing a range.
+                            if (dataSetCount == 2) {
+                                // We show both values in the range in a single legend entry
+                                value = layer.getDataSet(0).getValue(xIndex);
+                                double value2 = layer.getDataSet(1).getValue(xIndex);
+                                name = name + ": " + c.formatValue(Math.min(value, value2), "{value|P3}") +
+                                    " - " + c.formatValue(Math.max(value, value2), "{value|P3}");
+                            } else {
+                                // In a FinanceChart, only the layer for volume bars has 3 data sets for
+                                // up/down/flat days
+                                if (dataSetCount == 3) {
+                                    // The actual volume is the sum of the 3 data sets.
+                                    value = layer.getDataSet(0).getValue(xIndex) + layer.getDataSet(1
+                                        ).getValue(xIndex) + layer.getDataSet(2).getValue(xIndex);
+                                }
+
+                                // Create the legend entry
+                                name = name + ": " + c.formatValue(value, "{value|P3}") + unitChar;
+                            }
+
+                            // Build the legend entry, consist of a colored square box and the name (with the
+                            // data value in it).
+                            legendEntries.add("<*block*><*img=@square,width=8,edgeColor=000000,color=" +
+                                Integer.toHexString(dataSet.getDataColor()) + "*> " + name + "<*/*>");
+                        }
+                    }
+                }
+            }
+
+            // Get the plot area position relative to the entire FinanceChart
+            PlotArea plotArea = c.getPlotArea();
+            int plotAreaLeftX = plotArea.getLeftX() + c.getAbsOffsetX();
+            int plotAreaTopY = plotArea.getTopY() + c.getAbsOffsetY();
+
+            // The legend is formed by concatenating the legend entries.
+            Collections.reverse(legendEntries);
+            String legendText = Chart.stringJoin(legendEntries, "      ");
+
+            // Add the date and the ohlcLegend (if any) at the beginning of the legend
+            legendText = "<*block,valign=top,maxWidth=" + (plotArea.getWidth() - 5) + "*><*font=Arial Bold*>["
+                 + c.xAxis().getFormattedLabel(xValue, "mmm dd, yyyy") + "]<*/font*>      " + ohlcLegend +
+                legendText;
+
+            // Draw a vertical track line at the x-position
+            d.vline(plotAreaTopY, plotAreaTopY + plotArea.getHeight(), c.getXCoor(xValue) + c.getAbsOffsetX(),
+                d.dashLineColor(0x000000, 0x0101));
+
+            // Display the legend on the top of the plot area
+            TTFText t = d.text(legendText, "Arial", 8);
+            t.draw(plotAreaLeftX + 5, plotAreaTopY + 3, 0x000000, Chart.TopLeft);
+        }
+    }
+    
     /// <summary>
     /// Enable/Disable anti-alias. Enabling anti-alias makes the line smoother. Disabling
     /// anti-alias make the chart file size smaller, and so can be downloaded faster
@@ -2219,5 +2473,27 @@ public class FinanceChart extends MultiChart
         addThreshold(c, layer, -50 + range, upColor, -50 - range, downColor);
         c.yAxis().setLinearScale(-100, 0);
         return c;
+    }
+    
+    private String getPeriod(PeriodB temp){
+        String temps = "";
+        switch (temp) {
+            case val900:  
+                temps = "900";
+                break;
+            case val1800:  
+                temps = "1800";
+                break;
+            case val7200:  
+                temps = "7200";
+                break;
+            case val14400:  
+                temps = "14400"; 
+                break;
+            case val86400: 
+                temps = "86400";
+                break;
+          }
+        return temps;
     }
 }
